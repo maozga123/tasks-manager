@@ -1,0 +1,154 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@font-face {
+  font-family: "Inter";
+  src: local("Inter");
+}
+
+:root {
+  --font-inter: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-inter);
+  background: #f0f4f8;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Smooth transitions globally */
+* {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card glass effect */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Sidebar gradient */
+.sidebar-gradient {
+  background: linear-gradient(160deg, #1e1b4b 0%, #312e81 40%, #1e3a5f 100%);
+}
+
+/* Stat card gradients */
+.stat-indigo {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+}
+.stat-emerald {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+.stat-amber {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+.stat-rose {
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+}
+
+/* Priority badge */
+.priority-high {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+.priority-medium {
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fcd34d;
+}
+.priority-low {
+  background: #dcfce7;
+  color: #16a34a;
+  border: 1px solid #86efac;
+}
+
+/* Status badge */
+.status-pending {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+}
+.status-progress {
+  background: #dbeafe;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+}
+.status-done {
+  background: #dcfce7;
+  color: #16a34a;
+  border: 1px solid #86efac;
+}
+
+/* Hover lift effect */
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* Animated progress bar */
+@keyframes progress-fill {
+  from { width: 0%; }
+  to { width: var(--progress-width); }
+}
+.animate-progress {
+  animation: progress-fill 1s ease-out forwards;
+}
+
+/* Pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Fade in up */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+}
+
+.fade-in-up-1 { animation-delay: 0.05s; opacity: 0; }
+.fade-in-up-2 { animation-delay: 0.1s; opacity: 0; }
+.fade-in-up-3 { animation-delay: 0.15s; opacity: 0; }
+.fade-in-up-4 { animation-delay: 0.2s; opacity: 0; }
+.fade-in-up-5 { animation-delay: 0.25s; opacity: 0; }
+.fade-in-up-6 { animation-delay: 0.3s; opacity: 0; }
