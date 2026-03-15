@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import logging
+import logging.config
+from contextlib import asynccontextmanager
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from supabase import AsyncClient
+
+from config import get_settings
+from database import close_supabase, get_db, init_supabase
+from models import TaskCreate, TaskResponse, TaskUpdate
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+
+settings = get_settings()
+
+logging.config.dictConfig(
+    {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+            }
+        },
+        "root": {"handlers": ["console"], "level": settings.log_level},
+    }
+)
+
+logger = logging.getLogger(__name__)
+
+# ─── Table name ──────────────────────────────────────────────────────────────
+
+TABLE = "tasks"
+
+# ─── Lifespan ────────────────────────────────────────────────────────────────
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup → yield → shutdown."""
+    await init_supabase()
+    logger.info("🚀 CleanPro backend started [env=%s]", settings.app_env)
+    yield
+    await close_supabase()
+    logger.info("CleanPro backend shut down cleanly.")
+
+
+# ─── App ─────────────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="CleanPro Task Manager API",
+    description=(
+        "Production-ready REST API for managing home-cleaning tasks. "
+        "Backed by Supabase (PostgreSQL) with full async support."
+    ),
+    version="1.0.0",
+    contact={
+        "name": "CleanPro Engineering",
+        "url": "https://tasks-manager-xi.vercel.app",
+    },
+    license_info={"name": "MIT"},
+    lifespan=lifespan,
+)
+
+# ─── CORS ────────────────────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# ─── Dependency alias ────────────────────────────────────────────────────────
+
+DB = Annotated[AsyncClient, Depends(get_db)]
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+
+def _raise_not_found(task_id: UUID) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Task '{task_id}' not found.",
+    )
+
+
+def _raise_db_error(operation: str, error: object) -> None:
+    logger.error("Supabase error during %s: %s", operation, error)
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=f"Database error during {operation}. Please try again.",
+    )
+
+
+# ─── Routes ──────────────────────────────────────────────────────────────────
+
+
+@app.get(
+    "/tasks",
+    response_model=list[TaskResponse],
+    summary="List all cleaning tasks",
+    tags=["Tasks"],
+)
+async def get_tasks(
+    db: DB,
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description="Filter by status: pending | in_progress | completed",
+    ),
+    priority_filter: str | None = Query(
+        default=None,
+        alias="priority",
+        description="Filter by priority: low | medium | high",
+    ),
+    room: str | None = Query(default=None, description="Filter by room name"),
+    limit: int = Query(default=100, ge=1, le=500, description="Max results to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+) -> list[TaskResponse]:
+    """
+    Fetch all tasks from Supabase.
+    Supports optional filtering by **status**, **priority**, and **room**.
+    """
+    try:
+        query = db.table(TABLE).select("*").order("created_at", desc=True)
+
+        if status_filter:
+            query = query.eq("status", status_filter)
+        if priority_filter:
+            query = query.eq("priority", priority_filter)
+        if room:
+            query = query.ilike("room", f"%{room}%")
+
+        query = query.range(offset, offset + limit - 1)
+        response = await query.execute()
+    except Exception as exc:
+        _raise_db_error("GET /tasks", exc)
+
+    return response.data  # type: ignore[return-value]
+
+
+@app.post(
+    "/tasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new cleaning task",
+    tags=["Tasks"],
+)
+async def create_task(payload: TaskCreate, db: DB) -> TaskResponse:
+    """
+    Create a new cleaning task.
+    The **id**, **created_at**, and **updated_at** fields are generated by the database.
+    """
+    try:
+        response = (
+            await db.table(TABLE)
+            .insert(payload.model_dump(mode="json"))
+            .execute()
+        )
+    except Exception as exc:
+        _raise_db_error("POST /tasks", exc)
+
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Task was not created. Empty response from database.",
+        )
+
+    logger.info("Created task id=%s title=%r", response.data[0]["id"], payload.title)
+    return response.data[0]  # type: ignore[return-value]
+
+
+@app.patch(
+    "/tasks/{task_id}",
+    response_model=TaskResponse,
+    summary="Partially update a task",
+    tags=["Tasks"],
+)
+async def update_task(task_id: UUID, payload: TaskUpdate, db: DB) -> TaskResponse:
+    """
+    Partially update any field of an existing task.
+    Commonly used to **mark a task completed** or change its priority.
+    """
+    update_data = payload.model_dump(mode="json", exclude_none=True)
+
+    try:
+        response = (
+            await db.table(TABLE)
+            .update(update_data)
+            .eq("id", str(task_id))
+            .execute()
+        )
+    except Exception as exc:
+        _raise_db_error(f"PATCH /tasks/{task_id}", exc)
+
+    if not response.data:
+        _raise_not_found(task_id)
+
+    logger.info("Updated task id=%s fields=%s", task_id, list(update_data.keys()))
+    return response.data[0]  # type: ignore[return-value]
+
+
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a task",
+    tags=["Tasks"],
+)
+async def delete_task(task_id: UUID, db: DB) -> None:
+    """
+    Permanently delete a task by its UUID.
+    Returns **204 No Content** on success.
+    """
+    try:
+        response = (
+            await db.table(TABLE)
+            .delete()
+            .eq("id", str(task_id))
+            .execute()
+        )
+    except Exception as exc:
+        _raise_db_error(f"DELETE /tasks/{task_id}", exc)
+
+    if not response.data:
+        _raise_not_found(task_id)
+
+    logger.info("Deleted task id=%s", task_id)
+
+
+# ─── Health check ─────────────────────────────────────────────────────────────
+
+
+@app.get(
+    "/health",
+    summary="Health check",
+    tags=["Infra"],
+    response_model=dict,
+)
+async def health() -> dict:
+    """Lightweight liveness probe for Render / Fly.io health checks."""
+    return {"status": "ok", "env": settings.app_env}
