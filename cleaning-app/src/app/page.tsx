@@ -91,25 +91,27 @@ function mapApiTask(t: ApiTask): Task {
 // ─── Static data (team & schedule stay as UI-only) ────────────────────────────
 
 const teamMembers: TeamMember[] = [
-  { id: 1, name: "Sofia Martinez", role: "Senior Cleaner", avatar: "SM", tasksToday: 3, completed: 2, rating: 4.9, status: "busy" },
-  { id: 2, name: "James Rivera", role: "Commercial Specialist", avatar: "JR", tasksToday: 2, completed: 0, rating: 4.7, status: "available" },
-  { id: 3, name: "Lena Kovac", role: "Residential Cleaner", avatar: "LK", tasksToday: 2, completed: 1, rating: 4.8, status: "busy" },
-  { id: 4, name: "Carlos Diaz", role: "Floor Technician", avatar: "CD", tasksToday: 1, completed: 1, rating: 4.6, status: "available" },
+  { id: 1, name: "אבא", role: "אחראי נקיון", avatar: "אב", tasksToday: 3, completed: 2, rating: 4.9, status: "busy" },
+  { id: 2, name: "מאמו", role: "בת", avatar: "מא", tasksToday: 2, completed: 0, rating: 4.7, status: "available" },
+  { id: 3, name: "אליחי", role: "בן", avatar: "אל", tasksToday: 2, completed: 1, rating: 4.8, status: "busy" },
+  { id: 4, name: "תאיר", role: "בת", avatar: "תא", tasksToday: 1, completed: 1, rating: 4.6, status: "available" },
+  { id: 5, name: "שי", role: "בן", avatar: "שי", tasksToday: 1, completed: 0, rating: 4.5, status: "available" },
+  { id: 6, name: "גבריאל", role: "בן", avatar: "גב", tasksToday: 0, completed: 0, rating: 4.9, status: "available" },
 ];
 
 const schedule = [
-  { time: "06:00 AM", task: "Lobby & Common Areas", assignee: "Carlos D.", location: "Westfield Mall", done: true },
-  { time: "08:00 AM", task: "Kitchen & Appliance Deep Clean", assignee: "Sofia M.", location: "Green Villa", done: true },
-  { time: "10:00 AM", task: "Deep Clean — Master Bedroom", assignee: "Sofia M.", location: "Unit 4B, Maple Tower", done: false, active: true },
-  { time: "01:30 PM", task: "Office Floor Sanitization", assignee: "James R.", location: "Tech Hub, 3rd Floor", done: false },
-  { time: "02:00 PM", task: "Window Cleaning", assignee: "Lena K.", location: "Sunrise Apartments", done: false },
-  { time: "04:00 PM", task: "Carpet Steam Clean", assignee: "Carlos D.", location: "Oakwood Residence", done: false },
+  { time: "06:00", task: "סידור וארגון סלון", assignee: "אבא", location: "סלון", done: true },
+  { time: "08:00", task: "ניקוי יסודי של המטבח", assignee: "מאמו", location: "מטבח", done: true },
+  { time: "10:00", task: "שטיפת רצפות בחדרים", assignee: "תאיר", location: "חדרי שינה", done: false, active: true },
+  { time: "13:30", task: "זריקת זבל וניקוי פחים", assignee: "אליחי", location: "חצר", done: false },
+  { time: "14:00", task: "ניקוי פינת האוכל", assignee: "שי", location: "פינת אוכל", done: false },
+  { time: "16:00", task: "סידור צעצועים בסלון", assignee: "גבריאל", location: "סלון", done: false },
 ];
 
 // ─── Helper Components ────────────────────────────────────────────────────────
 
 function PriorityBadge({ priority }: { priority: Priority }) {
-  const labels = { high: "High", medium: "Medium", low: "Low" };
+  const labels = { high: "גבוה", medium: "בינוני", low: "נמוך" };
   const cls = `priority-${priority}`;
   return (
     <span className={`${cls} text-xs font-semibold px-2 py-0.5 rounded-full`}>
@@ -120,9 +122,9 @@ function PriorityBadge({ priority }: { priority: Priority }) {
 
 function StatusBadge({ status }: { status: Status }) {
   const map = {
-    pending: { label: "Pending", cls: "status-pending" },
-    "in-progress": { label: "In Progress", cls: "status-progress" },
-    done: { label: "Done", cls: "status-done" },
+    pending: { label: "ממתין", cls: "status-pending" },
+    "in-progress": { label: "בתהליך", cls: "status-progress" },
+    done: { label: "בוצע", cls: "status-done" },
   };
   const { label, cls } = map[status];
   return (
@@ -135,10 +137,12 @@ function StatusBadge({ status }: { status: Status }) {
 function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: "w-7 h-7 text-xs", md: "w-9 h-9 text-sm", lg: "w-12 h-12 text-base" };
   const colors: Record<string, string> = {
-    SM: "from-violet-500 to-purple-600",
-    JR: "from-blue-500 to-indigo-600",
-    LK: "from-emerald-500 to-teal-600",
-    CD: "from-amber-500 to-orange-600",
+    "אב": "from-violet-500 to-purple-600",
+    "מא": "from-blue-500 to-indigo-600",
+    "אל": "from-emerald-500 to-teal-600",
+    "תא": "from-amber-500 to-orange-600",
+    "שי": "from-cyan-500 to-blue-600",
+    "גב": "from-pink-500 to-rose-600",
   };
   const grad = colors[initials] ?? "from-slate-500 to-slate-600";
   return (
@@ -152,10 +156,10 @@ function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md
 
 function Sidebar({ active, setActive, taskCount }: { active: Tab; setActive: (t: Tab) => void; taskCount: number }) {
   const nav: { id: Tab; label: string; icon: string }[] = [
-    { id: "dashboard", label: "Dashboard", icon: "⊞" },
-    { id: "tasks", label: "Tasks", icon: "✓" },
-    { id: "schedule", label: "Schedule", icon: "📅" },
-    { id: "team", label: "Team", icon: "👥" },
+    { id: "dashboard", label: "לוח בקרה", icon: "⊞" },
+    { id: "tasks", label: "משימות", icon: "✓" },
+    { id: "schedule", label: "לוח זמנים", icon: "📅" },
+    { id: "team", label: "צוות", icon: "👥" },
   ];
 
   return (
@@ -175,7 +179,7 @@ function Sidebar({ active, setActive, taskCount }: { active: Tab; setActive: (t:
 
       {/* Today's date */}
       <div className="px-6 py-4 border-b border-white/10">
-        <div className="text-xs text-indigo-300 font-medium uppercase tracking-widest mb-0.5">Today</div>
+        <div className="text-xs text-indigo-300 font-medium uppercase tracking-widest mb-0.5">היום</div>
         <div className="text-sm font-semibold text-white">Sunday, Mar 15, 2026</div>
       </div>
 
@@ -210,8 +214,8 @@ function Sidebar({ active, setActive, taskCount }: { active: Tab; setActive: (t:
             AD
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-white truncate">Admin</div>
-            <div className="text-xs text-indigo-300 truncate">Manager</div>
+            <div className="text-sm font-medium text-white truncate">משפחה</div>
+            <div className="text-xs text-indigo-300 truncate">מנהל</div>
           </div>
           <span className="text-indigo-400 text-xs">⚙</span>
         </div>
@@ -254,13 +258,13 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => voi
       <div className="flex items-start gap-3">
         <span className="text-2xl">⚠️</span>
         <div className="flex-1">
-          <div className="font-semibold text-rose-700 mb-1">Could not reach the API</div>
+          <div className="font-semibold text-rose-700 mb-1">לא ניתן להתחבר לשרת</div>
           <div className="text-sm text-rose-600 mb-3">{message}</div>
           <button
             onClick={onRetry}
             className="text-sm bg-rose-600 hover:bg-rose-700 text-white px-4 py-1.5 rounded-lg font-semibold cursor-pointer border-0"
           >
-            Retry
+            נסה שוב
           </button>
         </div>
       </div>
@@ -280,10 +284,10 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
   const total = tasks.length || 1;
 
   const stats = [
-    { label: "Total Tasks", value: tasks.length, sub: "Live from DB", cls: "stat-indigo", icon: "📋" },
-    { label: "Completed", value: done, sub: `${Math.round((done / total) * 100)}% done`, cls: "stat-emerald", icon: "✅" },
-    { label: "In Progress", value: inProgress, sub: "Active now", cls: "stat-amber", icon: "⚡" },
-    { label: "High Priority", value: high, sub: "Needs attention", cls: "stat-rose", icon: "🔥" },
+    { label: "סה״כ משימות", value: tasks.length, sub: "מהמסד נתונים", cls: "stat-indigo", icon: "📋" },
+    { label: "הושלמו", value: done, sub: `${Math.round((done / total) * 100)}% הסתיימו`, cls: "stat-emerald", icon: "✅" },
+    { label: "בתהליך", value: inProgress, sub: "פעיל כעת", cls: "stat-amber", icon: "⚡" },
+    { label: "עדיפות גבוהה", value: high, sub: "דורש תשומת לב", cls: "stat-rose", icon: "🔥" },
   ];
 
   const recent = tasks.filter((t) => t.status !== "done").slice(0, 3);
@@ -311,7 +315,7 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* Completion chart */}
         <div className="glass-card rounded-2xl p-5 fade-in-up fade-in-up-5">
-          <h3 className="font-bold text-slate-800 mb-4">Today&apos;s Progress</h3>
+          <h3 className="font-bold text-slate-800 mb-4">התקדמות יומית</h3>
           <div className="flex items-center justify-center py-4">
             <div className="relative">
               <svg width="140" height="140" viewBox="0 0 140 140">
@@ -333,15 +337,15 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-3xl font-black text-slate-800">{Math.round((done / total) * 100)}%</span>
-                <span className="text-xs text-slate-500 font-medium">Complete</span>
+                <span className="text-xs text-slate-500 font-medium">הושלמו</span>
               </div>
             </div>
           </div>
           <div className="space-y-2 mt-2">
             {[
-              { label: "Done", count: done, color: "bg-emerald-500" },
-              { label: "In Progress", count: inProgress, color: "bg-amber-400" },
-              { label: "Pending", count: pending, color: "bg-slate-300" },
+              { label: "בוצע", count: done, color: "bg-emerald-500" },
+              { label: "בתהליך", count: inProgress, color: "bg-amber-400" },
+              { label: "ממתין", count: pending, color: "bg-slate-300" },
             ].map((row) => (
               <div key={row.label} className="flex items-center gap-2 text-sm text-slate-600">
                 <span className={`${row.color} w-2.5 h-2.5 rounded-full flex-shrink-0`} />
@@ -355,18 +359,18 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
         {/* Recent tasks */}
         <div className="xl:col-span-2 glass-card rounded-2xl p-5 fade-in-up fade-in-up-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-800">Upcoming Tasks</h3>
+            <h3 className="font-bold text-slate-800">משימות קרובות</h3>
             <button
               onClick={() => setActive("tasks")}
               className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 cursor-pointer border-0 bg-transparent"
             >
-              View all →
+              צפה בהכל ←
             </button>
           </div>
           {recent.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <div className="text-3xl mb-2">🎉</div>
-              <div className="text-sm font-medium">All caught up!</div>
+              <div className="text-sm font-medium">הכל הושלם!</div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -387,7 +391,7 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
 
       {/* Team activity */}
       <div className="glass-card rounded-2xl p-5 fade-in-up fade-in-up-6">
-        <h3 className="font-bold text-slate-800 mb-4">Team Activity Today</h3>
+        <h3 className="font-bold text-slate-800 mb-4">פעילות הצוות היום</h3>
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           {teamMembers.map((m) => (
             <div key={m.id} className="p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover-lift cursor-pointer">
@@ -408,7 +412,7 @@ function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActiv
                 </div>
               </div>
               <div className="text-xs text-slate-500">
-                {m.completed}/{m.tasksToday} tasks done
+                {m.completed}/{m.tasksToday} משימות בוצעו
               </div>
               <div className="mt-1.5 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                 <div
@@ -460,10 +464,10 @@ function TasksTab({
   };
 
   const filters: { id: "all" | Status; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "pending", label: "Pending" },
-    { id: "in-progress", label: "In Progress" },
-    { id: "done", label: "Done" },
+    { id: "all", label: "הכל" },
+    { id: "pending", label: "ממתין" },
+    { id: "in-progress", label: "בתהליך" },
+    { id: "done", label: "בוצע" },
   ];
 
   if (isLoading) return <LoadingSpinner />;
@@ -491,7 +495,7 @@ function TasksTab({
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-lg shadow-indigo-200 cursor-pointer border-0"
         >
-          <span className="text-lg leading-none">+</span> Add Task
+          <span className="text-lg leading-none">+</span> הוסף משימה
         </button>
       </div>
 
@@ -568,39 +572,39 @@ function TasksTab({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 fade-in-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-800">New Task</h2>
+              <h2 className="text-lg font-bold text-slate-800">משימה חדשה</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer border-0 bg-transparent text-2xl leading-none">×</button>
             </div>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Task Title *</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">שם משימה *</label>
                 <input
                   id="task-title-input"
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                  placeholder="e.g. Deep Clean Living Room"
+                  placeholder="לדוגמה: ניקוי שטיח בסלון"
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Room / Location</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">חדר / מיקום</label>
                 <input
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                  placeholder="e.g. Kitchen"
+                  placeholder="לדוגמה: חדר מס' 2"
                   value={newTask.location}
                   onChange={(e) => setNewTask({ ...newTask, location: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Priority</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">עדיפות</label>
                 <select
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 bg-white cursor-pointer"
                   value={newTask.priority}
                   onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as Priority })}
                 >
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
+                  <option value="high">גבוהה</option>
+                  <option value="medium">בינונית</option>
+                  <option value="low">נמוכה</option>
                 </select>
               </div>
               <button
@@ -609,7 +613,7 @@ function TasksTab({
                 disabled={saving}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-semibold cursor-pointer border-0 mt-1 shadow-lg shadow-indigo-200"
               >
-                {saving ? "Creating…" : "Create Task"}
+                {saving ? "יוצר..." : "צור משימה"}
               </button>
             </div>
           </div>
@@ -624,7 +628,7 @@ function TasksTab({
 function ScheduleTab() {
   return (
     <div className="glass-card rounded-2xl p-6 space-y-1">
-      <h3 className="font-bold text-slate-800 text-lg mb-5">Today&apos;s Schedule — March 15, 2026</h3>
+      <h3 className="font-bold text-slate-800 text-lg mb-5">הלוז להיום</h3>
       <div className="relative">
         {/* Timeline line */}
         <div className="absolute left-[74px] top-3 bottom-3 w-0.5 bg-slate-100" />
@@ -699,12 +703,12 @@ function TeamTab() {
               m.status === "available" ? "bg-emerald-100 text-emerald-700" :
               "bg-slate-100 text-slate-500"
             }`}>
-              {m.status === "busy" ? "🔶 On task" : m.status === "available" ? "🟢 Available" : "⭘ Off today"}
+              {m.status === "busy" ? "🔶 במשימה" : m.status === "available" ? "🟢 פנוי/ה" : "⭘ לא זמין"}
             </div>
 
             <div className="w-full space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
-                <span>Tasks today</span>
+                <span>משימות להיום</span>
                 <span className="font-semibold text-slate-800">{m.completed}/{m.tasksToday}</span>
               </div>
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -714,7 +718,7 @@ function TeamTab() {
                 />
               </div>
               <div className="flex justify-between text-slate-600 pt-1">
-                <span>Rating</span>
+                <span>דירוג</span>
                 <span className="font-semibold text-amber-500">⭐ {m.rating}</span>
               </div>
             </div>
@@ -832,15 +836,15 @@ export default function Home() {
   // ── Tab header text ──────────────────────────────────────────────────────────
 
   const tabTitles: Record<Tab, { title: string; sub: string }> = {
-    dashboard: { title: "Good morning, Admin 👋", sub: "Here's what's happening today" },
+    dashboard: { title: "בוקר טוב משפחה 👋", sub: "הנה מה שקורה היום" },
     tasks: {
-      title: "All Tasks",
+      title: "כל המשימות",
       sub: isLoading
-        ? "Loading…"
-        : `${tasks.length} tasks total · ${tasks.filter((t) => t.status === "done").length} completed`,
+        ? "טוען..."
+        : `סה״כ ${tasks.length} משימות · ${tasks.filter((t) => t.status === "done").length} הושלמו`,
     },
-    schedule: { title: "Today's Schedule", sub: "March 15, 2026 · 6 planned sessions" },
-    team: { title: "Your Team", sub: `${teamMembers.length} members · ${teamMembers.filter((m) => m.status === "available").length} available now` },
+    schedule: { title: "לוח זמנים להיום", sub: "15 במרץ 2026 · 6 פעילויות מתוכננות" },
+    team: { title: "הצוות שלך", sub: `${teamMembers.length} חברים · ${teamMembers.filter((m) => m.status === "available").length} פנויים כעת` },
   };
 
   return (
