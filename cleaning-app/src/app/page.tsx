@@ -224,9 +224,26 @@ function Sidebar({ active, setActive, taskCount }: { active: Tab; setActive: (t:
 
 function LoadingSpinner() {
   return (
-    <div className="flex flex-col items-center justify-center py-24 gap-4">
-      <div className="w-10 h-10 rounded-full border-4 border-indigo-100 border-t-indigo-500 animate-spin" />
-      <p className="text-slate-500 text-sm font-medium">Loading tasks from database…</p>
+    <div className="space-y-4 py-6 w-full max-w-4xl">
+      {/* Dashboard top stats mock */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6 cursor-wait">
+        <div className="skeleton h-32 w-full rounded-2xl bg-base-200"></div>
+        <div className="skeleton h-32 w-full rounded-2xl bg-base-200"></div>
+        <div className="skeleton h-32 w-full rounded-2xl bg-base-200"></div>
+        <div className="skeleton h-32 w-full rounded-2xl bg-base-200"></div>
+      </div>
+      
+      {/* List items mock */}
+      <div className="flex flex-col gap-4">
+        <div className="skeleton h-24 w-full rounded-2xl bg-base-200"></div>
+        <div className="skeleton h-24 w-full rounded-2xl bg-base-200 opacity-80"></div>
+        <div className="skeleton h-24 w-full rounded-2xl bg-base-200 opacity-60"></div>
+        <div className="skeleton h-24 w-full rounded-2xl bg-base-200 opacity-40"></div>
+      </div>
+      
+      <div className="flex justify-center pt-4">
+        <span className="loading loading-bars loading-lg text-indigo-500"></span>
+      </div>
     </div>
   );
 }
