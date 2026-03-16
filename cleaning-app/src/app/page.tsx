@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -9,17 +13,31 @@ type Status = "pending" | "in-progress" | "done";
 type Tab = "dashboard" | "tasks" | "schedule" | "team";
 
 interface Task {
-  id: number;
+  id: string;           // UUID from DB
   title: string;
-  location: string;
+  location: string;     // mapped from API `room`
+  priority: Priority;
+  status: Status;       // normalized from API values
+  // UI-only fields (not persisted)
   assignee: string;
   avatar: string;
-  priority: Priority;
-  status: Status;
   dueDate: string;
   dueTime: string;
   category: string;
   progress: number;
+}
+
+// Raw shape returned by the FastAPI backend
+interface ApiTask {
+  id: string;
+  title: string;
+  room: string;
+  priority: "low" | "medium" | "high";
+  status: "pending" | "in_progress" | "completed";
+  frequency_days: number;
+  last_cleaned: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface TeamMember {
@@ -33,88 +51,44 @@ interface TeamMember {
   status: "available" | "busy" | "off";
 }
 
-// ─── Initial Data ─────────────────────────────────────────────────────────────
+// ─── Mapping helpers ──────────────────────────────────────────────────────────
 
-const initialTasks: Task[] = [
-  {
-    id: 1,
-    title: "Deep Clean — Master Bedroom",
-    location: "Unit 4B, Maple Tower",
-    assignee: "Sofia M.",
-    avatar: "SM",
-    priority: "high",
-    status: "in-progress",
-    dueDate: "Today",
-    dueTime: "10:00 AM",
+/** Convert an API status string to a UI Status. */
+function apiStatusToUi(s: ApiTask["status"]): Status {
+  if (s === "in_progress") return "in-progress";
+  if (s === "completed") return "done";
+  return "pending";
+}
+
+/** Convert a UI Status back to the API value for PATCH calls. */
+function uiStatusToApi(s: Status): ApiTask["status"] {
+  if (s === "in-progress") return "in_progress";
+  if (s === "done") return "completed";
+  return "pending";
+}
+
+/** Map a raw API row into the richer UI Task shape. */
+function mapApiTask(t: ApiTask): Task {
+  return {
+    id: t.id,
+    title: t.title,
+    location: t.room,
+    priority: t.priority,
+    status: apiStatusToUi(t.status),
+    // UI-only defaults — not stored in the DB
+    assignee: "Unassigned",
+    avatar: t.title.slice(0, 2).toUpperCase(),
+    dueDate: t.last_cleaned
+      ? new Date(t.last_cleaned).toLocaleDateString()
+      : "TBD",
+    dueTime: "",
     category: "Residential",
-    progress: 60,
-  },
-  {
-    id: 2,
-    title: "Office Floor Sanitization",
-    location: "Tech Hub, 3rd Floor",
-    assignee: "James R.",
-    avatar: "JR",
-    priority: "high",
-    status: "pending",
-    dueDate: "Today",
-    dueTime: "01:30 PM",
-    category: "Commercial",
-    progress: 0,
-  },
-  {
-    id: 3,
-    title: "Window & Glass Cleaning",
-    location: "Sunrise Apartments, #12",
-    assignee: "Lena K.",
-    avatar: "LK",
-    priority: "medium",
-    status: "pending",
-    dueDate: "Tomorrow",
-    dueTime: "09:00 AM",
-    category: "Residential",
-    progress: 0,
-  },
-  {
-    id: 4,
-    title: "Kitchen & Appliance Deep Clean",
-    location: "Green Villa, Block C",
-    assignee: "Sofia M.",
-    avatar: "SM",
-    priority: "medium",
-    status: "done",
-    dueDate: "Today",
-    dueTime: "08:00 AM",
-    category: "Residential",
-    progress: 100,
-  },
-  {
-    id: 5,
-    title: "Lobby & Common Areas",
-    location: "Westfield Mall — South Wing",
-    assignee: "Carlos D.",
-    avatar: "CD",
-    priority: "low",
-    status: "done",
-    dueDate: "Yesterday",
-    dueTime: "06:00 AM",
-    category: "Commercial",
-    progress: 100,
-  },
-  {
-    id: 6,
-    title: "Post-Construction Cleanup",
-    location: "New Build Site, Lot 7",
-    assignee: "James R.",
-    avatar: "JR",
-    priority: "high",
-    status: "pending",
-    dueDate: "Mar 17",
-    dueTime: "07:00 AM",
-    category: "Specialty",
-    progress: 0,
-  },
-];
+    progress:
+      t.status === "completed" ? 100 : t.status === "in_progress" ? 50 : 0,
+  };
+}
+
+// ─── Static data (team & schedule stay as UI-only) ────────────────────────────
 
 const teamMembers: TeamMember[] = [
   { id: 1, name: "Sofia Martinez", role: "Senior Cleaner", avatar: "SM", tasksToday: 3, completed: 2, rating: 4.9, status: "busy" },
@@ -176,7 +150,7 @@ function Avatar({ initials, size = "md" }: { initials: string; size?: "sm" | "md
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
-function Sidebar({ active, setActive }: { active: Tab; setActive: (t: Tab) => void }) {
+function Sidebar({ active, setActive, taskCount }: { active: Tab; setActive: (t: Tab) => void; taskCount: number }) {
   const nav: { id: Tab; label: string; icon: string }[] = [
     { id: "dashboard", label: "Dashboard", icon: "⊞" },
     { id: "tasks", label: "Tasks", icon: "✓" },
@@ -220,9 +194,9 @@ function Sidebar({ active, setActive }: { active: Tab; setActive: (t: Tab) => vo
           >
             <span className="text-base w-5 text-center">{item.icon}</span>
             {item.label}
-            {item.id === "tasks" && (
+            {item.id === "tasks" && taskCount > 0 && (
               <span className="ml-auto bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                6
+                {taskCount}
               </span>
             )}
           </button>
@@ -246,17 +220,51 @@ function Sidebar({ active, setActive }: { active: Tab; setActive: (t: Tab) => vo
   );
 }
 
+// ─── Loading & Error States ───────────────────────────────────────────────────
+
+function LoadingSpinner() {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 gap-4">
+      <div className="w-10 h-10 rounded-full border-4 border-indigo-100 border-t-indigo-500 animate-spin" />
+      <p className="text-slate-500 text-sm font-medium">Loading tasks from database…</p>
+    </div>
+  );
+}
+
+function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="glass-card rounded-2xl p-6 border border-rose-200 bg-rose-50">
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">⚠️</span>
+        <div className="flex-1">
+          <div className="font-semibold text-rose-700 mb-1">Could not reach the API</div>
+          <div className="text-sm text-rose-600 mb-3">{message}</div>
+          <button
+            onClick={onRetry}
+            className="text-sm bg-rose-600 hover:bg-rose-700 text-white px-4 py-1.5 rounded-lg font-semibold cursor-pointer border-0"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
 
-function DashboardTab({ tasks, setActive }: { tasks: Task[]; setActive: (t: Tab) => void }) {
+function DashboardTab({ tasks, setActive, isLoading }: { tasks: Task[]; setActive: (t: Tab) => void; isLoading: boolean }) {
+  if (isLoading) return <LoadingSpinner />;
+
   const done = tasks.filter((t) => t.status === "done").length;
   const inProgress = tasks.filter((t) => t.status === "in-progress").length;
   const pending = tasks.filter((t) => t.status === "pending").length;
   const high = tasks.filter((t) => t.priority === "high" && t.status !== "done").length;
+  const total = tasks.length || 1;
 
   const stats = [
-    { label: "Total Tasks", value: tasks.length, sub: "This week", cls: "stat-indigo", icon: "📋" },
-    { label: "Completed", value: done, sub: `${Math.round((done / tasks.length) * 100)}% done`, cls: "stat-emerald", icon: "✅" },
+    { label: "Total Tasks", value: tasks.length, sub: "Live from DB", cls: "stat-indigo", icon: "📋" },
+    { label: "Completed", value: done, sub: `${Math.round((done / total) * 100)}% done`, cls: "stat-emerald", icon: "✅" },
     { label: "In Progress", value: inProgress, sub: "Active now", cls: "stat-amber", icon: "⚡" },
     { label: "High Priority", value: high, sub: "Needs attention", cls: "stat-rose", icon: "🔥" },
   ];
@@ -296,7 +304,7 @@ function DashboardTab({ tasks, setActive }: { tasks: Task[]; setActive: (t: Tab)
                   stroke="url(#prog-grad)" strokeWidth="12"
                   strokeLinecap="round"
                   strokeDasharray={`${2 * Math.PI * 56}`}
-                  strokeDashoffset={`${2 * Math.PI * 56 * (1 - done / tasks.length)}`}
+                  strokeDashoffset={`${2 * Math.PI * 56 * (1 - done / total)}`}
                   transform="rotate(-90 70 70)"
                 />
                 <defs>
@@ -307,7 +315,7 @@ function DashboardTab({ tasks, setActive }: { tasks: Task[]; setActive: (t: Tab)
                 </defs>
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-black text-slate-800">{Math.round((done / tasks.length) * 100)}%</span>
+                <span className="text-3xl font-black text-slate-800">{Math.round((done / total) * 100)}%</span>
                 <span className="text-xs text-slate-500 font-medium">Complete</span>
               </div>
             </div>
@@ -338,18 +346,25 @@ function DashboardTab({ tasks, setActive }: { tasks: Task[]; setActive: (t: Tab)
               View all →
             </button>
           </div>
-          <div className="space-y-3">
-            {recent.map((task) => (
-              <div key={task.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 cursor-pointer hover-lift">
-                <Avatar initials={task.avatar} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-800 truncate">{task.title}</div>
-                  <div className="text-xs text-slate-500">{task.dueDate} · {task.dueTime}</div>
+          {recent.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <div className="text-3xl mb-2">🎉</div>
+              <div className="text-sm font-medium">All caught up!</div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {recent.map((task) => (
+                <div key={task.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 cursor-pointer hover-lift">
+                  <Avatar initials={task.avatar} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-800 truncate">{task.title}</div>
+                    <div className="text-xs text-slate-500">📍 {task.location}</div>
+                  </div>
+                  <PriorityBadge priority={task.priority} />
                 </div>
-                <PriorityBadge priority={task.priority} />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -394,45 +409,36 @@ function DashboardTab({ tasks, setActive }: { tasks: Task[]; setActive: (t: Tab)
 
 // ─── Tasks Tab ────────────────────────────────────────────────────────────────
 
-function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) => void }) {
+function TasksTab({
+  tasks,
+  isLoading,
+  error,
+  onRetry,
+  onAdd,
+  onToggleStatus,
+  onDelete,
+}: {
+  tasks: Task[];
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onAdd: (data: { title: string; location: string; priority: Priority }) => Promise<void>;
+  onToggleStatus: (task: Task) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [showModal, setShowModal] = useState(false);
-  const [newTask, setNewTask] = useState({ title: "", location: "", assignee: "", priority: "medium" as Priority, dueDate: "", dueTime: "" });
+  const [saving, setSaving] = useState(false);
+  const [newTask, setNewTask] = useState({ title: "", location: "", priority: "medium" as Priority });
 
   const filtered = filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
 
-  const toggleStatus = (id: number) => {
-    setTasks(
-      tasks.map((t) =>
-        t.id !== id ? t :
-        { ...t, status: t.status === "done" ? "pending" : t.status === "pending" ? "in-progress" : "done",
-          progress: t.status === "done" ? 0 : t.status === "pending" ? 50 : 100 }
-      )
-    );
-  };
-
-  const deleteTask = (id: number) => setTasks(tasks.filter((t) => t.id !== id));
-
-  const addTask = () => {
+  const handleAdd = async () => {
     if (!newTask.title.trim()) return;
-    const avatars: Record<string, string> = { "Sofia M.": "SM", "James R.": "JR", "Lena K.": "LK", "Carlos D.": "CD" };
-    setTasks([
-      ...tasks,
-      {
-        id: Date.now(),
-        title: newTask.title,
-        location: newTask.location || "TBD",
-        assignee: newTask.assignee || "Unassigned",
-        avatar: avatars[newTask.assignee] ?? newTask.assignee.slice(0, 2).toUpperCase(),
-        priority: newTask.priority,
-        status: "pending",
-        dueDate: newTask.dueDate || "TBD",
-        dueTime: newTask.dueTime || "",
-        category: "Residential",
-        progress: 0,
-      },
-    ]);
-    setNewTask({ title: "", location: "", assignee: "", priority: "medium", dueDate: "", dueTime: "" });
+    setSaving(true);
+    await onAdd(newTask);
+    setSaving(false);
+    setNewTask({ title: "", location: "", priority: "medium" });
     setShowModal(false);
   };
 
@@ -442,6 +448,9 @@ function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) =>
     { id: "in-progress", label: "In Progress" },
     { id: "done", label: "Done" },
   ];
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorBanner message={error} onRetry={onRetry} />;
 
   return (
     <div className="space-y-5">
@@ -483,9 +492,9 @@ function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) =>
             className={`glass-card rounded-2xl p-4 hover-lift fade-in-up fade-in-up-${Math.min(i + 1, 6)} ${task.status === "done" ? "opacity-70" : ""}`}
           >
             <div className="flex items-start gap-4">
-              {/* Checkbox */}
+              {/* Toggle status button */}
               <button
-                onClick={() => toggleStatus(task.id)}
+                onClick={() => onToggleStatus(task)}
                 className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center transition-all border-0
                   ${task.status === "done" ? "bg-emerald-500 border-emerald-500 text-white" :
                     task.status === "in-progress" ? "border-indigo-500 bg-indigo-50" : "border-slate-300 bg-white hover:border-indigo-400"
@@ -507,7 +516,6 @@ function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) =>
                 </div>
                 <div className="text-sm text-slate-500 mb-2 flex flex-wrap gap-3">
                   <span>📍 {task.location}</span>
-                  <span>🕐 {task.dueDate}{task.dueTime ? ` · ${task.dueTime}` : ""}</span>
                 </div>
                 {task.status === "in-progress" && (
                   <div className="flex items-center gap-2">
@@ -522,14 +530,11 @@ function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) =>
                 )}
               </div>
 
-              {/* Assignee + delete */}
+              {/* Avatar + delete */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <Avatar initials={task.avatar} size="sm" />
-                  <span className="text-xs text-slate-600 font-medium hidden sm:block">{task.assignee}</span>
-                </div>
+                <Avatar initials={task.avatar} size="sm" />
                 <button
-                  onClick={() => deleteTask(task.id)}
+                  onClick={() => onDelete(task.id)}
                   className="text-slate-300 hover:text-rose-400 cursor-pointer border-0 bg-transparent text-lg leading-none p-1 rounded-lg hover:bg-rose-50"
                   aria-label="Delete task"
                 >
@@ -561,68 +566,33 @@ function TasksTab({ tasks, setTasks }: { tasks: Task[]; setTasks: (t: Task[]) =>
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Location</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Room / Location</label>
                 <input
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                  placeholder="e.g. Unit 3A, Maple Tower"
+                  placeholder="e.g. Kitchen"
                   value={newTask.location}
                   onChange={(e) => setNewTask({ ...newTask, location: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Assignee</label>
-                  <select
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 bg-white cursor-pointer"
-                    value={newTask.assignee}
-                    onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
-                  >
-                    <option value="">Unassigned</option>
-                    <option>Sofia M.</option>
-                    <option>James R.</option>
-                    <option>Lena K.</option>
-                    <option>Carlos D.</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Priority</label>
-                  <select
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 bg-white cursor-pointer"
-                    value={newTask.priority}
-                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as Priority })}
-                  >
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Due Date</label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 cursor-pointer"
-                    value={newTask.dueDate}
-                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Time</label>
-                  <input
-                    type="time"
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 cursor-pointer"
-                    value={newTask.dueTime}
-                    onChange={(e) => setNewTask({ ...newTask, dueTime: e.target.value })}
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Priority</label>
+                <select
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 bg-white cursor-pointer"
+                  value={newTask.priority}
+                  onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as Priority })}
+                >
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
               </div>
               <button
                 id="submit-task-btn"
-                onClick={addTask}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-semibold cursor-pointer border-0 mt-1 shadow-lg shadow-indigo-200"
+                onClick={handleAdd}
+                disabled={saving}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-semibold cursor-pointer border-0 mt-1 shadow-lg shadow-indigo-200"
               >
-                Create Task
+                {saving ? "Creating…" : "Create Task"}
               </button>
             </div>
           </div>
@@ -742,18 +712,123 @@ function TeamTab() {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Fetch all tasks from the backend ────────────────────────────────────────
+
+  const fetchTasks = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/tasks`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data: ApiTask[] = await res.json();
+      setTasks(data.map(mapApiTask));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // ── Create a task via POST /tasks ────────────────────────────────────────────
+
+  const addTask = useCallback(
+    async (data: { title: string; location: string; priority: Priority }) => {
+      try {
+        const res = await fetch(`${API_URL}/tasks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: data.title,
+            room: data.location || "General",
+            priority: data.priority,
+          }),
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const created: ApiTask = await res.json();
+        setTasks((prev) => [mapApiTask(created), ...prev]);
+      } catch (err) {
+        console.error("Failed to create task:", err);
+        setError("Failed to create task. Please try again.");
+      }
+    },
+    []
+  );
+
+  // ── Cycle status via PATCH /tasks/{id} ────────────────────────────────────────
+
+  const toggleStatus = useCallback(async (task: Task) => {
+    const nextUi: Status =
+      task.status === "done" ? "pending" :
+      task.status === "pending" ? "in-progress" : "done";
+    const nextApi = uiStatusToApi(nextUi);
+
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id !== task.id ? t : {
+          ...t,
+          status: nextUi,
+          progress: nextUi === "done" ? 100 : nextUi === "in-progress" ? 50 : 0,
+        }
+      )
+    );
+
+    try {
+      const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextApi }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    } catch (err) {
+      console.error("Failed to update task:", err);
+      // Roll back
+      setTasks((prev) =>
+        prev.map((t) => (t.id !== task.id ? t : { ...t, status: task.status, progress: task.progress }))
+      );
+    }
+  }, []);
+
+  // ── Delete via DELETE /tasks/{id} ────────────────────────────────────────────
+
+  const deleteTask = useCallback(async (id: string) => {
+    // Optimistic remove
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    try {
+      const res = await fetch(`${API_URL}/tasks/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error(`Server returned ${res.status}`);
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+      // Restore by re-fetching
+      fetchTasks();
+    }
+  }, [fetchTasks]);
+
+  // ── Tab header text ──────────────────────────────────────────────────────────
 
   const tabTitles: Record<Tab, { title: string; sub: string }> = {
     dashboard: { title: "Good morning, Admin 👋", sub: "Here's what's happening today" },
-    tasks: { title: "All Tasks", sub: `${tasks.length} tasks total · ${tasks.filter(t => t.status === "done").length} completed` },
+    tasks: {
+      title: "All Tasks",
+      sub: isLoading
+        ? "Loading…"
+        : `${tasks.length} tasks total · ${tasks.filter((t) => t.status === "done").length} completed`,
+    },
     schedule: { title: "Today's Schedule", sub: "March 15, 2026 · 6 planned sessions" },
-    team: { title: "Your Team", sub: `${teamMembers.length} members · ${teamMembers.filter(m => m.status === "available").length} available now` },
+    team: { title: "Your Team", sub: `${teamMembers.length} members · ${teamMembers.filter((m) => m.status === "available").length} available now` },
   };
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar active={activeTab} setActive={setActiveTab} />
+      <Sidebar active={activeTab} setActive={setActiveTab} taskCount={tasks.length} />
 
       <main className="flex-1 min-w-0 p-6 xl:p-8 overflow-auto">
         {/* Top header */}
@@ -763,8 +838,20 @@ export default function Home() {
         </div>
 
         {/* Tab content */}
-        {activeTab === "dashboard" && <DashboardTab tasks={tasks} setActive={setActiveTab} />}
-        {activeTab === "tasks" && <TasksTab tasks={tasks} setTasks={setTasks} />}
+        {activeTab === "dashboard" && (
+          <DashboardTab tasks={tasks} setActive={setActiveTab} isLoading={isLoading} />
+        )}
+        {activeTab === "tasks" && (
+          <TasksTab
+            tasks={tasks}
+            isLoading={isLoading}
+            error={error}
+            onRetry={fetchTasks}
+            onAdd={addTask}
+            onToggleStatus={toggleStatus}
+            onDelete={deleteTask}
+          />
+        )}
         {activeTab === "schedule" && <ScheduleTab />}
         {activeTab === "team" && <TeamTab />}
       </main>
